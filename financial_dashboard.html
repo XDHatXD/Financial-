@@ -88,7 +88,7 @@
     </div>
 <script>
 const socket = new WebSocket(
-  "wss://quote.alltick.io/quote-b-ws?token=e7e4ed91556c4410b8947617bbd212d9b50efc3dd4ec4c74b72e5d65dd29d460"
+  "wss://ws.alltick.io/quote-b-ws?token=e7e4ed91556c4410b8947617bbd212d9b50efc3dd4ec4c74b72e5d65dd29d460"
 );
 
 const map = {
@@ -103,6 +103,7 @@ const map = {
 };
 
 socket.onopen = () => {
+  console.log("WebSocket connected");
   socket.send(JSON.stringify({
     cmd: "subscribe",
     args: Object.keys(map)
@@ -116,16 +117,15 @@ socket.onmessage = (event) => {
   msg.data.forEach(item => {
     const el = document.getElementById(map[item.symbol]);
     if (el && item.last) {
-      el.innerText =
-        (item.symbol.includes("USD") || item.symbol === "BTCUSD"
-          ? "$"
-          : "") + item.last.toFixed(2);
+      el.innerText = "$" + item.last.toFixed(2);
     }
   });
 };
 
-socket.onerror = err => console.error("WS error", err);
+socket.onerror = err => console.error("WebSocket error:", err);
+socket.onclose = () => console.log("WebSocket closed");
 </script>
+
     
 </body>
 
