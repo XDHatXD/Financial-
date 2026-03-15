@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<meta charset="UTF-8">
+<title>Global Trading Dashboard</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+
+body{
+font-family:Arial;
+background:#0a0f1a;
+color:white;
+margin:0;
+}
+
+header{
+background:#111827;
+padding:15px;
+display:flex;
+justify-content:space-between;
+align-items:center;
+}
+
+h1{
+margin:0;
+}
+
+.section{
+max-width:1400px;
+margin:auto;
+padding:20px;
+}
+
+.grid{
+display:grid;
+grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+gap:15px;
+}
+
+.card{
+background:#1e293b;
+padding:15px;
+border-radius:8px;
+}
+
+.price{
+font-size:22px;
+margin-top:5px;
+}
+
+.change{
+font-size:14px;
+}
+
+.up{color:#22c55e;}
+.down{color:#ef4444;}
+
+canvas{
+margin-top:10px;
+height:80px !important;
+}
+
+#ticker{
+background:black;
+padding:8px;
+overflow:hidden;
+white-space:nowrap;
+}
+
+#ticker span{
+margin-right:40px;
+font-weight:bold;
+}
+
+</style>
+</head>
+
+<body>
+
+<header>
+
+<h1>XDH Market Dashboard</h1>
+
+<div id="marketStatus"></div>
+
+</header>
+
+<div id="ticker"></div>
+
+<div class="section">
+
+<h2>Indices</h2>
+<div class="grid" id="indices"></div>
+
+<h2>Stocks</h2>
+<div class="grid" id="stocks"></div>
+
+<h2>ETFs</h2>
+<div class="grid" id="etfs"></div>
+
+<h2>Metals</h2>
+<div class="grid" id="metals"></div>
+
+<h2>Crypto (Realtime)</h2>
+<div class="grid" id="crypto"></div>
+
+</div>
+
+<script>
+
+/* API KEYS */
+
+const finnhub="d6qqkmpr01qgdhqc0ol0d6qqkmpr01qgdhqc0olg";
+const alpha="SNFTWJZ1827YRWTD";
+
+/* ASSETS */
+
+const indices=[
+{symbol:"^GSPC",name:"S&P 500"},
+{symbol:"^DJI",name:"Dow Jones"},
+{symbol:"^IXIC",name:"NASDAQ"},
+{symbol:"^VIX",name:"VIX"}
+];
+
+const stocks=[
+"TSLA","FSLR","CVX","GD","GILD"
+];
+
+const etfs=[
+"VXUS","IAU","IAUM","SLV","AIQ","SMH","ARKW"
+];
+
+const metals=[
+{symbol:"XAU",name:"Gold"},
+{symbol:"XAG",name:"Silver"},
+{symbol:"XPT",name:"Platinum"}
+];
+
+const crypto=[
+"BINANCE:BTCUSDT",
+"BINANCE:ETHUSDT",
+"BINANCE:LTCUSDT"
+];
+
+/* CREATE CARDS */
+
+function createCards(list,id){
+
+const grid=document.getElementById(id);
+
+list.forEach(asset=>{
+
+let symbol=asset.symbol || asset;
+let name=asset.name || asset;
+
+const card=document.createElement("div");
+
+card.className="card";
+
+card.innerHTML=`
+<h3>${name}</h3>
+<div id="${symbol}" class="price">--</div>
+<div id="${symbol}-change" class="change">--</div>
+<canvas id="chart-${symbol}"></canvas>
+`;
+
+grid.appendChild(card);
+
+});
+
+}
+
+createCards(indices,"indices");
+createCards(stocks,"stocks");
+createCards(etfs,"etfs");
+
+createCards(crypto,"crypto");
+
+/* MINI CHART STORAGE */
+
+const charts={};
+
+function updateChart(symbol,price){
+
+if(!charts[symbol]){
+
+charts[symbol]=new Chart(
+document.getElementById("chart-"+symbol),
+{
+type:"line",
+data:{
+labels:[],
+datasets:[{
+data:[],
+borderColor:"#4ade80",
+borderWidth:2,
+pointRadius:0
+}]
+},
+options:{
+responsive:true,
+plugins:{legend:{display:false}},
+scales:{
+x:{display:false},
+y:{display:false}
+}
+}
+});
+
+}
+
+const chart=charts[symbol];
+
+chart.data.labels.push("");
+chart.data.datasets[0].data.push(price);
+
+if(chart.data.labels.length>20){
+
+chart.data.labels.shift();
+chart.data.datasets[0].data.shift();
+
+}
+
+chart.update();
+
+}
+
+/* FINNHUB STOCKS */
+
+async function loadStocks(){
+
+const list=[...stocks,...etfs];
+
+for(const symbol of list){
+
+try{
+
+const url=`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${finnhub}`;
+
+const res=await fetch(url);
+
+const data=await res.json();
+
+if(!data.c)return;
+
+const price=data.c;
+
+const change=((data.c-data.pc)/data.pc*100).toFixed(2);
+
+document.getElementById(symbol).innerText="$"+price.toFixed(2);
+
+const changeEl=document.getElementById(symbol+"-change");
+
+changeEl.innerText=change+"%";
+changeEl.className=change>=0?"change up":"change down";
+
+updateChart(symbol,price);
+
+updateTicker(symbol,price,change);
+
+}catch{}
+
+await new Promise(r=>setTimeout(r,250));
+
+}
+
+}
+
+loadStocks();
+setInterval(loadStocks,60000);
+
+/* INDICES */
+
+async function loadIndices(){
+
+for(const index of indices){
+
+try{
+
+const url=`https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${index.symbol}&apikey=${alpha}`;
+
+const res=await fetch(url);
+
+const data=await res.json();
+
+const quote=data["Global Quote"];
+
+if(!quote)continue;
+
+const price=parseFloat(quote["05. price"]);
+
+const change=parseFloat(quote["10. change percent"]);
+
+document.getElementById(index.symbol).innerText="$"+price;
+
+const changeEl=document.getElementById(index.symbol+"-change");
+
+changeEl.innerText=change+"%";
+changeEl.className=change>=0?"change up":"change down";
+
+updateChart(index.symbol,price);
+
+updateTicker(index.symbol,price,change);
+
+}catch{}
+
+await new Promise(r=>setTimeout(r,12000));
+
+}
+
+}
+
+loadIndices();
+
+/* METALS */
+
+async function loadMetals(){
+
+for(const metal of metals){
+
+try{
+
+const url=`https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE&from_currency=${metal.symbol}&to_currency=USD&apikey=${alpha}`;
+
+const res=await fetch(url);
+
+const data=await res.json();
+
+const price=parseFloat(data["Realtime Currency Exchange Rate"]["5. Exchange Rate"]);
+
+document.getElementById(metal.symbol).innerText="$"+price.toFixed(2);
+
+updateChart(metal.symbol,price);
+
+updateTicker(metal.symbol,price,"");
+
+}catch{}
+
+await new Promise(r=>setTimeout(r,12000));
+
+}
+
+}
+
+loadMetals();
+
+/* REALTIME CRYPTO */
+
+const socket=new WebSocket(`wss://ws.finnhub.io?token=${finnhub}`);
+
+socket.addEventListener("open",()=>{
+
+crypto.forEach(symbol=>{
+
+socket.send(JSON.stringify({
+type:"subscribe",
+symbol:symbol
+}));
+
+});
+
+});
+
+socket.addEventListener("message",(event)=>{
+
+const msg=JSON.parse(event.data);
+
+if(!msg.data)return;
+
+msg.data.forEach(trade=>{
+
+document.getElementById(trade.s).innerText="$"+trade.p;
+
+updateChart(trade.s,trade.p);
+
+updateTicker(trade.s,trade.p,"");
+
+});
+
+});
+
+/* MARKET STATUS */
+
+function marketStatus(){
+
+const now=new Date();
+const hour=now.getUTCHours();
+
+const open=(hour>=14 && hour<=21);
+
+document.getElementById("marketStatus").innerText=open?
+"US Market OPEN":"US Market CLOSED";
+
+}
+
+marketStatus();
+
+/* TICKER */
+
+function updateTicker(symbol,price,change){
+
+const ticker=document.getElementById("ticker");
+
+const span=document.createElement("span");
+
+span.innerText=`${symbol}: ${price} ${change}%`;
+
+span.className=change>=0?"up":"down";
+
+ticker.appendChild(span);
+
+if(ticker.children.length>40){
+
+ticker.removeChild(ticker.firstChild);
+
+}
+
+}
+
+</script>
+
+</body>
+</html>
+
+
