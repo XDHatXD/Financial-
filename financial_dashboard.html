@@ -2,10 +2,12 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Optimized Finnhub Dashboard</title>
+<title>Hybrid Finnhub Dashboard</title>
+<link rel="icon" href="favicon.ico" type="image/x-icon">
 <style>
 body { font-family: Arial, sans-serif; background: #0f172a; color: white; text-align: center; }
 h1 { margin-top: 20px; }
+#status { margin-top: 10px; font-size: 16px; color: #38bdf8; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; max-width: 1200px; margin: 40px auto; }
 .card { background: #1e293b; padding: 20px; border-radius: 10px; box-shadow: 0 5px 15px rgba(0,0,0,0.4); }
 .price { font-size: 22px; margin-top: 10px; color: #38bdf8; }
@@ -16,60 +18,94 @@ h1 { margin-top: 20px; }
 </head>
 <body>
 
-<h1>Optimized Finnhub Dashboard</h1>
+<h1>Hybrid Finnhub Dashboard</h1>
+<div id="status">Connecting...</div>
 <div class="grid" id="dashboard"></div>
 
 <script>
-const apiKey = "d6qenupr01qhcrmjttdgd6qenupr01qhcrmjtte0";
+const apiKey = "d6qqkmpr01qgdhqc0ol0d6qqkmpr01qgdhqc0olg";
 
 // Assets
-const assets = [
-  {type:"METAL", symbol:"XAUUSD", name:"Gold"},
-  {type:"METAL", symbol:"XAGUSD", name:"Silver"},
-  {type:"METAL", symbol:"XPTUSD", name:"Platinum"},
-  {type:"CRYPTO", symbol:"BINANCE:BTCUSDT", name:"Bitcoin"},
-  {type:"CRYPTO", symbol:"BINANCE:ETHUSDT", name:"Ethereum"},
-  {type:"CRYPTO", symbol:"BINANCE:LTCUSDT", name:"Litecoin"},
-  {type:"INDEX", symbol:"INDEX:DJI", name:"DOW"},
-  {type:"INDEX", symbol:"INDEX:IXIC", name:"NASDAQ"},
-  {type:"INDEX", symbol:"INDEX:SPX", name:"S&P 500"},
-  {type:"STOCK", symbol:"NYSE:VXUS", name:"VXUS"},
-  {type:"STOCK", symbol:"NYSE:IAU", name:"IAU"},
-  {type:"STOCK", symbol:"NASDAQ:IAUM", name:"IAUM"},
-  {type:"STOCK", symbol:"NYSE:SLV", name:"SLV"},
-  {type:"STOCK", symbol:"NASDAQ:TSLA", name:"TSLA"},
-  {type:"NASDAQ:FSLR", name:"FSLR"},
-  {type:"NYSE:CVX", name:"CVX"},
-  {type:"NYSE:GD", name:"GD"},
-  {type:"NASDAQ:GILD", name:"GILD"},
-  {type:"NYSE:AIQ", name:"AIQ"},
-  {type:"NYSE:SMH", name:"SMH"},
-  {type:"FSPTX", name:"FSPTX"},
-  {type:"ARKW", name:"ARKW"}
+const cryptos = [
+  {symbol:"BINANCE:BTCUSDT", name:"Bitcoin"},
+  {symbol:"BINANCE:ETHUSDT", name:"Ethereum"},
+  {symbol:"BINANCE:LTCUSDT", name:"Litecoin"}
 ];
-
+const metalsStocksIndices = [
+  {symbol:"XAUUSD", name:"Gold"},
+  {symbol:"XAGUSD", name:"Silver"},
+  {symbol:"XPTUSD", name:"Platinum"},
+  {symbol:"INDEX:DJI", name:"DOW"},
+  {symbol:"INDEX:IXIC", name:"NASDAQ"},
+  {symbol:"INDEX:SPX", name:"S&P 500"},
+  {symbol:"NYSE:VXUS", name:"VXUS"},
+  {symbol:"NYSE:IAU", name:"IAU"},
+  {symbol:"NASDAQ:IAUM", name:"IAUM"},
+  {symbol:"NYSE:SLV", name:"SLV"},
+  {symbol:"NASDAQ:TSLA", name:"TSLA"},
+  {symbol:"NASDAQ:FSLR", name:"FSLR"},
+  {symbol:"NYSE:CVX", name:"CVX"},
+  {symbol:"NYSE:GD", name:"GD"},
+  {symbol:"NASDAQ:GILD", name:"GILD"},
+  {symbol:"NYSE:AIQ", name:"AIQ"},
+  {symbol:"NYSE:SMH", name:"SMH"}
+];
 // Create dashboard cards
 const dashboard = document.getElementById("dashboard");
-assets.forEach(asset=>{
+[...cryptos, ...metalsStocksIndices].forEach(asset=>{
   const card = document.createElement("div");
   card.className = "card";
   card.innerHTML = `<h3>${asset.name}</h3>
-                    <div id="${asset.symbol}" class="price">Loading...</div>
+                    <div id="${asset.symbol}" class="price">--</div>
                     <div id="${asset.symbol}-change" class="change">--</div>`;
   dashboard.appendChild(card);
 });
 
-// Fetch single asset
-async function fetchAsset(asset){
+// ---------- WebSocket for cryptos ----------
+const prevCryptoPrices = {};
+const socket = new WebSocket(`wss://ws.finnhub.io?token=${apiKey}`);
+
+socket.addEventListener('open', () => {
+  document.getElementById("status").innerText = "Connected";
+  cryptos.forEach(asset => {
+    socket.send(JSON.stringify({type:"subscribe", symbol: asset.symbol}));
+  });
+});
+
+socket.addEventListener('message', (event) => {
+  let msg;
+  try { msg = JSON.parse(event.data); } catch(e){ return; }
+  if(msg.data){
+    msg.data.forEach(trade=>{
+      const symbol = trade.s;
+      const price = parseFloat(trade.p).toFixed(2);
+      const prev = prevCryptoPrices[symbol] || price;
+      const change = parseFloat(((price-prev)/prev)*100).toFixed(2);
+      prevCryptoPrices[symbol] = price;
+      const priceEl = document.getElementById(symbol);
+      const changeEl = document.getElementById(symbol+"-change");
+      if(priceEl && changeEl){
+        priceEl.innerText = "$"+price;
+        changeEl.innerHTML = `<span class="${change>=0?'up':'down'}">${change}%</span>`;
+      }
+    });
+  }
+});
+
+// ---------- REST API for metals/stocks/indices ----------
+async function fetchREST(asset){
   try{
-    let url = `https://finnhub.io/api/v1/quote?symbol=${asset.symbol}&token=${apiKey}`;
-    const response = await fetch(url);
-    const data = await response.json();
-    if(data && data.c){
+    const url = `https://finnhub.io/api/v1/quote?symbol=${asset.symbol}&token=${apiKey}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if(data && data.c !== undefined){
       const price = parseFloat(data.c).toFixed(2);
-      const change = parseFloat(((data.c - data.pc)/data.pc)*100).toFixed(2);
+      const change = data.pc ? parseFloat(((data.c - data.pc)/data.pc)*100).toFixed(2) : "--";
       document.getElementById(asset.symbol).innerText="$"+price;
-      document.getElementById(asset.symbol+"-change").innerHTML=`<span class="${change>=0?'up':'down'}">${change}%</span>`;
+      document.getElementById(asset.symbol+"-change").innerHTML = change==="--" ? "--" : `<span class="${change>=0?'up':'down'}">${change}%</span>`;
+    } else {
+      document.getElementById(asset.symbol).innerText="N/A";
+      document.getElementById(asset.symbol+"-change").innerText="--";
     }
   } catch(e){
     console.error(`Error fetching ${asset.name}:`, e);
@@ -78,17 +114,15 @@ async function fetchAsset(asset){
   }
 }
 
-// Sequential fetch to prevent browser throttling
-async function fetchAllSequentially(){
-  for(let i=0; i<assets.length; i++){
-    await fetchAsset(assets[i]);
-    await new Promise(r => setTimeout(r, 200)); // 200ms delay between requests
+// Fetch all metals/stocks/indices every 60s
+async function fetchAllREST(){
+  for(const asset of metalsStocksIndices){
+    await fetchREST(asset);
+    await new Promise(r=>setTimeout(r, 200)); // 200ms delay to avoid throttling
   }
 }
-
-// Initial fetch + refresh every 30 seconds
-fetchAllSequentially();
-setInterval(fetchAllSequentially, 30000);
+fetchAllREST();
+setInterval(fetchAllREST, 60000);
 </script>
 
 </body>
