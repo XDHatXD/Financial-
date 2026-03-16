@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Backend‑Free Stock Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+  body { font-family: Arial, sans-serif; background:#0b1020; color:#fff; padding:20px; }
+  h1 { text-align:center; margin-bottom:20px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:16px; max-width:900px; margin:0 auto; }
+  .card { background:#151b30; padding:16px; border-radius:12px; box-shadow:0 8px 25px rgba(0,0,0,.5); }
+  .symbol { font-size:.9rem; color:#9aa0c6; text-transform:uppercase; }
+  .price { font-size:2rem; font-weight:bold; margin-top:6px; }
+  .meta { margin-top:6px; font-size:.8rem; color:#9aa0c6; }
+  .status { text-align:center; margin-top:20px; color:#9aa0c6; }
+</style>
+</head>
+
+<body>
+
+<h1>Live + Last‑Trading‑Day Stock Dashboard</h1>
+<div class="grid">
+  <div class="card" data-symbol="AAPL">
+    <div class="symbol">AAPL</div>
+    <div id="AAPL-price" class="price">—</div>
+    <div id="AAPL-meta" class="meta">Loading…</div>
+  </div>
+
+  <div class="status" id="status">Connecting…</div>
+
+<script>
+const FINNHUB_KEY = "d6qqkmpr01qgdhqc0ol0d6qqkmpr01qgdhqc0olg";
+const ALPHA_KEY = "SNFTWJZ1827YRWTD";
+
+const SYMBOLS = ["APPL" ];
+let wsReceived = false;
+
+// Update UI
+function updateCard(symbol, price, text) {
+  document.getElementById(symbol + "-price").textContent = "$" + price;
+  document.getElementById(symbol + "-meta").textContent = text;
+}
+
+// Alpha Vantage fallback (last trading day)
+async function fetchLastDay(symbol) {
+  const url =
+    `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${ALPHA_KEY}`;
+
+  const res = await fetch(url);
+  const data = await res.json();
+  const q = data["Global Quote"];
+
+  if (!q) return;
+
+  updateCard(
+    symbol,
+    Number(q["05. price"]).toFixed(2),
+    `Last trading day · Change: ${q["09. change"]} (${q["10. change percent"]})`
+  );
+}
+
+// Finnhub WebSocket (real‑time)
+function connectWS() {
+  const ws = new WebSocket("wss://ws.finnhub.io?token=" + FINNHUB_KEY);
+
+  document.getElementById("status").textContent = "Connecting to real‑time feed…";
+
+  ws.onopen = () => {
+    SYMBOLS.forEach(sym => {
+      ws.send(JSON.stringify({ type: "subscribe", symbol: sym }));
+    });
+
+    // If no real‑time data arrives in 3 seconds → fallback
+    setTimeout(() => {
+      if (!wsReceived) {
+        document.getElementById("status").textContent =
+          "Market closed · Showing last trading day data";
+        SYMBOLS.forEach(fetchLastDay);
+      }
+    }, 3000);
+  };
+
+  ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    if (!msg.data) return;
+
+    wsReceived = true;
+    document.getElementById("status").textContent = "Real‑time market data";
+
+    msg.data.forEach(t => {
+      updateCard(t.s, t.p.toFixed(2), "Real‑time trade · " + new Date(t.t).toLocaleTimeString());
+    });
+  };
+
+  ws.onerror = () => {
+    document.getElementById("status").textContent = "WebSocket error";
+  };
+
+  ws.onclose = () => {
+    document.getElementById("status").textContent = "Disconnected · Reconnecting…";
+    setTimeout(connectWS, 2000);
+  };
+}
+
+connectWS();
+</script>
+
+</body>
+</html>
