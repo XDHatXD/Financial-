@@ -251,6 +251,8 @@ async function loadDashboard() {
     `;
 }
 
+loadDashboard();
+setInterval(loadDashboard, 300000);
 // 🔴 LIVE FX (real-time)
 async function fetchLiveFX() {
     try {
