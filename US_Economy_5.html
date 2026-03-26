@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>US Economy Health Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body {
+            font-family: Arial;
+            background: #0f172a;
+            color: white;
+            margin: 0;
+        }
+
+        h1 {
+            text-align: center;
+            padding: 15px;
+        }
+
+        h2 {
+            margin-left: 15px;
+            margin-top: 25px;
+            color: #94a3b8;
+        }
+
+        .section {
+            padding: 10px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 8px;
+            padding: 10px;
+        }
+
+        .card {
+            background: #1e293b;
+            padding: 15px;
+            border-radius: 12px;
+        }
+
+        .value {
+            font-size: 22px;
+            margin: 6px 0;
+        }
+
+        canvas {
+            height: 160px !important;
+        }
+
+        .summary {
+            text-align: center;
+            font-size: 26px;
+            margin: 15px;
+        }
+
+        .green { color: #22c55e; }
+        .yellow { color: #eab308; }
+        .red { color: #ef4444; }
+table th, table td {
+    border: 1px solid #8aaacf;
+}
+
+table {
+    border: 1px solid #6d74d1;
+}
+</style>
+</head>
+
+<body>
+
+<h1>US Economy Health Dashboard</h1>
+<a href="index.html" target="_blank">click HERE for Market News and Data</a>
+<div id="summary" class="summary"></div>
+ 
+<!-- 🏠 Housing & Rates -->
+<div class="section">
+    <h2>🏠 Mortgage & Interest Rates</h2>
+    <div class="grid" id="rates"></div>
+</div>
+
+<!-- 📊 Inflation & Labor -->
+<div class="section">
+    <h2>📊 Inflation & Labor</h2>
+    <div class="grid" id="macro"></div>
+</div>
+
+<!-- 🌍 Global -->
+<div class="section">
+    <h2>🌍 Global FX Rates</h2>
+    <div class="grid" id="fx"></div>
+</div>
+
+<script>
+
+const FRED_API_KEY = "586b60806b6165a523f3854547237861";
+
+// 🔑 PUT YOUR UNIRATE API KEY HERE
+const UNIRATE_API_KEY = "iuIyyZFb8KjV1Xjmw2MH09pl6EyOtWuqh2zAEwlgAHI0PfkNr4BDZlnw75Rgg7oU";
+
+const groups = {
+    rates: [
+        { name: "30Y Mortgage", id: "MORTGAGE30US", unit: "%" },
+        { name: "15Y Mortgage", id: "MORTGAGE15US", unit: "%" },
+        { name: "4Y Treasury Yield", id: "TY48MCD", unit: "%" }
+    ],
+    macro: [
+        { name: "Consumer Price Index", id: "CPIAUCSL", unit: "" },
+        { name: "Unemployment Rate", id: "UNRATE", unit: "%" }
+    ]
+};
+
+// ✅ FX now uses Unirate (real-time)
+const fxPairs = [
+    { name: "USD → EUR", symbol: "EUR" },
+    { name: "USD → CNY", symbol: "CNY" },
+    { name: "USD → CAD", symbol: "CAD" },
+    { name: "USD → CHF", symbol: "CHF" },
+    { name: "USD → SGD", symbol: "SGD" }
+];
+
+// ================= FRED =================
+async function fetchSeries(seriesId) {
+    try {
+        const fredUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&api_key=${FRED_API_KEY}&file_type=json&sort_order=desc&limit=30`;
+        const proxy = `https://corsproxy.io/?${encodeURIComponent(fredUrl)}`;
+
+        const res = await fetch(proxy);
+        const data = await res.json();
+
+        let values = data.observations
+            .map(o => o.value)
+            .filter(v => v !== "." && !isNaN(parseFloat(v)))
+            .map(Number);
+
+        if (values.length === 0) return null;
+
+        values = values.reverse();
+
+        return values.slice(-12);
+
+    } catch (err) {
+        console.error("FRED error:", seriesId, err);
+        return null;
+    }
+}
+
+// ================= UNIRATE FX =================
+async function fetchFX_Unirate() {
+    try {
+        const url = `https://api.unirateapi.com/api/rates?api_key=${UNIRATE_API_KEY}&base=USD`;
+        const res = await fetch(url);
+        const data = await res.json();
+
+        return data.rates;
+
+    } catch (err) {
+        console.error("Unirate FX error:", err);
+        return null;
+    }
+}
+
+// ================= CHART =================
+function createChart(canvasId, data) {
+    new Chart(document.getElementById(canvasId), {
+        type: 'line',
+        data: {
+            labels: data.map((_, i) => i+1),
+            datasets: [{
+                data: data,
+                borderWidth: 2,
+                tension: 0.3
+            }]
+        },
+        options: {
+            plugins: { legend: { display: false }},
+            scales: { x: { display: false }}
+        }
+    });
+}
+
+// ================= CARD =================
+function addCard(containerId, name, data, unit="") {
+
+    if (!data || data.length === 0) {
+        document.getElementById(containerId).innerHTML += `
+            <div class="card">
+                <div>${name}</div>
+                <div class="value">N/A</div>
+            </div>
+        `;
+        return null;
+    }
+
+    const latest = data[data.length - 1];
+    const prev = data[data.length - 2] || latest;
+
+    const canvasId = name.replace(/\s/g, "_");
+
+    let arrow = "→";
+    let color = "white";
+
+    if (latest > prev) {
+        arrow = "▲";
+        color = "#22c55e";
+    } else if (latest < prev) {
+        arrow = "▼";
+        color = "#ef4444";
+    }
+
+    const decimals = containerId === "fx" ? 4 : 2;
+
+    document.getElementById(containerId).innerHTML += `
+        <div class="card">
+            <div>${name}</div>
+            <div class="value">${latest.toFixed(decimals)} ${unit}</div>
+            <div style="color:${color}">
+                ${arrow} ${(latest - prev).toFixed(decimals)}
+            </div>
+            <canvas id="${canvasId}"></canvas>
+        </div>
+    `;
+
+    if (data.length > 2) {
+        setTimeout(() => createChart(canvasId, data), 100);
+    }
+
+    return latest;
+}
+
+// ================= DASHBOARD =================
+async function loadDashboard() {
+
+    document.getElementById("rates").innerHTML = "";
+    document.getElementById("macro").innerHTML = "";
+    document.getElementById("fx").innerHTML = "";
+
+    let cpi, unrate, rate;
+
+    // 🔹 FRED DATA
+    for (let group in groups) {
+        for (let ind of groups[group]) {
+
+            const data = await fetchSeries(ind.id);
+            const latest = addCard(group, ind.name, data, ind.unit);
+
+            if (!latest) continue;
+
+            if (ind.id === "CPIAUCSL") cpi = latest;
+            if (ind.id === "UNRATE") unrate = latest;
+            if (ind.id === "MORTGAGE30US") rate = latest;
+        }
+    }
+
+    // 🔹 REAL-TIME FX (UNIRATE)
+    const fxRates = await fetchFX_Unirate();
+
+    if (fxRates) {
+        for (let pair of fxPairs) {
+
+            const value = fxRates[pair.symbol];
+
+            if (!value) continue;
+
+            // simulate short history for chart
+            const fakeHistory = [
+                value * (1 - 0.002),
+                value * (1 - 0.001),
+                value
+            ];
+
+            addCard("fx", pair.name, fakeHistory);
+        }
+    }
+
+    // 🔹 HEALTH SCORE
+    let score = 100;
+    if (cpi > 4) score -= 25;
+    if (unrate > 5) score -= 25;
+    if (rate > 5) score -= 25;
+
+    let color = "green";
+    if (score < 70) color = "yellow";
+    if (score < 50) color = "red";
+
+    let recession = (unrate > 4.5 && rate < 5)
+        ? "🚨 Recession Risk Rising"
+        : "✅ Stable";
+
+    document.getElementById("summary").innerHTML = `
+        <div class="${color}">🧠 Health Score: ${score}/100</div>
+        <div>${recession}</div>
+    `;
+}
+
+// 🚀 RUN
+loadDashboard();
+
+// refresh every 5 min (FRED safe)
+setInterval(loadDashboard, 300000);
+
+</script>
+<!-- ================= TABLE SECTION ================= -->
+
+<!-- Currency Stability Table -->
+<div class="table-box">
+ 
+        <h2>Currency Stability Overview</h2>
+
+  <div style="overflow-x:auto;">
+    <table style="width:100%; border-collapse:collapse; font-family:Arial; color:rgb(242, 240, 247);">
+      <thead>
+        <tr style="background:#1e293b;">
+          <th style="padding:10px;">Currency</th>
+          <th style="padding:10px;">Overall Stability</th>
+          <th style="padding:10px;">Safe Haven Status</th>
+          <th style="padding:10px;">Volatility</th>
+          <th style="padding:10px;">Key Drivers</th>
+          <th style="padding:10px;">Global Reserve Share</th>
+          <th style="padding:10px;">Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="border-bottom:1px solid #f2f3f5;">
+          <td style="padding:10px;">USD</td>
+          <td style="padding:10px;">⭐⭐⭐⭐⭐</td>
+          <td style="padding:10px;">Strong safe haven</td>
+          <td style="padding:10px;">Low</td>
+          <td style="padding:10px;">Global demand, Fed policy</td>
+          <td style="padding:10px;">#1</td>
+          <td style="padding:10px;">World’s anchor currency</td>
+        </tr>
+
+        <tr style="border-bottom:1px solid #f4f6f8;">
+          <td style="padding:10px;">CHF</td>
+          <td style="padding:10px;">⭐⭐⭐⭐⭐</td>
+          <td style="padding:10px;">Top-tier safe haven</td>
+          <td style="padding:10px;">Very Low</td>
+          <td style="padding:10px;">Swiss stability</td>
+          <td style="padding:10px;">High</td>
+          <td style="padding:10px;">Crisis currency</td>
+        </tr>
+
+        <tr style="border-bottom:1px solid #ecf1f8;">
+          <td style="padding:10px;">SGD</td>
+          <td style="padding:10px;">⭐⭐⭐⭐</td>
+          <td style="padding:10px;">Moderate</td>
+          <td style="padding:10px;">Low</td>
+          <td style="padding:10px;">Managed float</td>
+          <td style="padding:10px;">Moderate</td>
+          <td style="padding:10px;">Very stable in Asia</td>
+        </tr>
+
+        <tr style="border-bottom:1px solid #edeff3;">
+          <td style="padding:10px;">JPY</td>
+          <td style="padding:10px;">⭐⭐⭐⭐</td>
+          <td style="padding:10px;">Safe haven</td>
+          <td style="padding:10px;">Moderate</td>
+          <td style="padding:10px;">Risk-off flows</td>
+          <td style="padding:10px;">High</td>
+          <td style="padding:10px;">Repatriation flows</td>
+        </tr>
+
+        <tr style="border-bottom:1px solid #f3f5f8;">
+          <td style="padding:10px;">EUR</td>
+          <td style="padding:10px;">⭐⭐⭐⭐</td>
+          <td style="padding:10px;">Moderate</td>
+          <td style="padding:10px;">Low–Moderate</td>
+          <td style="padding:10px;">ECB policy</td>
+          <td style="padding:10px;">#2</td>
+          <td style="padding:10px;">Stable but political risk</td>
+        </tr>
+
+        <tr style="border-bottom:1px solid #f3f5f8;">
+          <td style="padding:10px;">CAD</td>
+          <td style="padding:10px;">⭐⭐⭐</td>
+          <td style="padding:10px;">No</td>
+          <td style="padding:10px;">Higher</td>
+          <td style="padding:10px;">Oil-linked</td>
+          <td style="padding:10px;">Small</td>
+          <td style="padding:10px;">Commodity-driven</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Allocation Table -->
+<div class="table-box">
+
+  <h2>Recommended Allocation of Free Cash Assets for Maximum Financial Security</h2>
+
+  <p style="color:#94a3b8;">
+     Stability-focused allocation with global diversification.
+  </p>
+
+ 
+   <div style="overflow-x:auto;">
+    <table style="width:80%; border-collapse:collapse;">
+      <thead>
+        <tr style="background:#1e293b;">
+          <th style="width:7%;padding:10px;">Currency</th>
+          <th style="width:10%;padding:10px;">Allocation %</th>
+          <th style="width:35%;padding:10px;">Crisis Type / Why</th>
+          <th style="width:35%;padding:10px;">Currency Strength</th>
+          <th style="width:40%;padding:10px;">How to Access </th>
+        </tr>
+      </thead>
+      <tbody>
+
+        <tr style="border-bottom:1px solid #334155;">
+          <td style="padding:10px;"><b>CHF</b></td>
+          <td style="padding:10px;">(20)-25</td>
+          <td style="padding:10px;">Systemic collapse/Hedging</td>
+          <th style="padding:10px;">Best safe haven</th>
+          <td style="padding:10px;">Swissquote, UBS</td>
+        </tr>
+
+        <tr style="border-bottom:1px solid #334155;">
+          <td style="padding:10px;"><b>SGD</b></td>
+          <td style="padding:10px;">(10)-15</td>
+          <th style="padding:10px;">US banking crisis/not tired to US/Europe cycles</th>
+          <td style="padding:10px;">Low volatility</td>
+          <td style="padding:10px;">HSBC, SCB</td>
+        </tr>
+
+        <tr style="border-bottom:1px solid #334155;">
+          <td style="padding:10px;"><b>USD</b></td>
+          <td style="padding:10px;">50-(60)</td>
+          <th style="padding:10px;">Global panic/resident convenience</th>
+          <td style="padding:10px;">Liquidity and relatively safer and higher return in treasuries/MMFs</td>
+          <td style="padding:10px;">US banks</td>
+        </tr>
+
+        <tr style="border-bottom:1px solid #334155;">
+          <td style="padding:10px;"><b>EUR</b></td>
+          <td style="padding:10px;">0-(5)</td>
+          <th style="padding:10px;">US political upheaval/livestyle and relatively easy to reach</th>
+          <td style="padding:10px;">Jurisdiction diversification</td>
+          <td style="padding:10px;">Wise, banks</td>
+        </tr>
+
+        <tr style="border-bottom:1px solid #334155;">
+          <td style="padding:10px;"><b>JPY</b></td>
+          <td style="padding:10px;">(5)-10</td>
+          <th style="padding:10px;">Short-term shock spike/proximity to China</th>
+          <td style="padding:10px;">Resilient in financial systems</td>
+          <td style="padding:10px;">Brokerage</td>
+        </tr>
+
+      </tbody>
+    </table>
+  </div>
+</div>
+</body>
+</html>
