@@ -90,7 +90,7 @@ table {
 
 <!-- 🌍 Global -->
 <div class="section">
-    <h2>🌍 Global FX Rates</h2>
+    <h2>🌍 Foreign Currency Exchange Rates</h2>
     <div class="grid" id="fx"></div>
 </div>
 <div id="unirate-calculator"
@@ -122,11 +122,11 @@ const groups = {
 
 // ✅ FX now uses Unirate (real-time)
 const fxPairs = [
-    { name: "USD → EUR", symbol: "EUR" },
-    { name: "USD → CNY", symbol: "CNY" },
-    { name: "USD → CAD", symbol: "CAD" },
-    { name: "USD → CHF", symbol: "CHF" },
-    { name: "USD → SGD", symbol: "SGD" }
+    { name: "USD  to Euro", symbol: "EUR" },
+    { name: "USD to Chinese RMB", symbol: "CNY" },
+    { name: "USD to Canadian Dollar", symbol: "CAD" },
+    { name: "USD to Swiss Franc", symbol: "CHF" },
+    { name: "USD to Singapore Dollar", symbol: "SGD" }
 ];
 
 // ================= FRED =================
@@ -181,15 +181,15 @@ async function buildFXTable() {
 
         let html = `
             <div class="card">
-                <div style="font-size:24px;font-weight:bold; margin-bottom:24px;">
-                    💱 FX Rates (${base} Base, ${amount})
+                <div style="margin-left: 680px; font-size:24px;font-weight:bold; margin-bottom:24px;">
+                    💱 USD to Other Currencies (${base} Base, ${amount})
                 </div>
-                <table style="width:30%; border-collapse:collapse;">
+                <table style="margin-left: 500px; width:50%; border-collapse:collapse;">
                     <thead>
                         <tr>
-                            <th style="font-size:24px; text-align:center;">Currency</th>
-                            <th style="font-size:24px;text-align:center;">Rate</th>
-                            <th style="font-size:24px;text-align:center;">Value</th>
+                            <th style="margin-left: 20px; font-size:24px; text-align:center;">Currency Type</th>
+                            <th style="margin-left: 20px; font-size:24px;text-align:center;">Exchange Rate</th>
+                            <th style="margin-left: 20px; font-size:24px;text-align:center;">Value of $100 USD</th>
                         </tr>
                     </thead>
                     <tbody>
