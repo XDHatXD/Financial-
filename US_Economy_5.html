@@ -32,18 +32,18 @@
         .grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 8px;
+            gap: 20px;
             padding: 10px;
         }
 
         .card {
-            background: #1e293b;
+            background: #172d57;
             padding: 15px;
             border-radius: 12px;
         }
 
         .value {
-            font-size: 22px;
+            font-size: 30px;
             margin: 6px 0;
         }
 
@@ -65,7 +65,7 @@ table th, table td {
 }
 
 table {
-    border: 1px solid #6d74d1;
+    border: 1px solid #373a5c;
 }
 </style>
 </head>
@@ -84,7 +84,7 @@ table {
 
 <!-- 📊 Inflation & Labor -->
 <div class="section">
-    <h2>📊 Inflation & Labor</h2>
+    <h2>📊 Inflation, Labor Market & Volatility</h2>
     <div class="grid" id="macro"></div>
 </div>
 
@@ -93,7 +93,11 @@ table {
     <h2>🌍 Global FX Rates</h2>
     <div class="grid" id="fx"></div>
 </div>
-
+<div id="unirate-calculator"
+     data-base="USD"
+     data-amount="100"
+     data-currencies="CHF,SGD,EUR,GBP,JPY,CNY,CAD,AUD">
+</div>
 <script>
 
 const FRED_API_KEY = "586b60806b6165a523f3854547237861";
@@ -105,11 +109,14 @@ const groups = {
     rates: [
         { name: "30Y Mortgage", id: "MORTGAGE30US", unit: "%" },
         { name: "15Y Mortgage", id: "MORTGAGE15US", unit: "%" },
-        { name: "4Y Treasury Yield", id: "TY48MCD", unit: "%" }
-    ],
+        { name: "4Y Treasury Yield", id: "TY48MCD", unit: "%" },
+        { name: "10Y Treasury Yield", id: "DGS10", unit: "%" }
+    ], 
     macro: [
         { name: "Consumer Price Index", id: "CPIAUCSL", unit: "" },
-        { name: "Unemployment Rate", id: "UNRATE", unit: "%" }
+        { name: "Unemployment Rate", id: "UNRATE", unit: "%" },
+        { name: "VIX by gold volatility", id: "GVZCLS", unit: "" },
+        {name: "S&P 500 Volatility Index", id: "VIXCLS", unit: "" }
     ]
 };
 
@@ -149,17 +156,72 @@ async function fetchSeries(seriesId) {
 }
 
 // ================= UNIRATE FX =================
-async function fetchFX_Unirate() {
+// ================= UNIRATE TABLE =================
+async function buildFXTable() {
+
+    const container = document.getElementById("unirate-calculator");
+    if (!container) return;
+
+    const base = container.dataset.base || "USD";
+    const amount = parseFloat(container.dataset.amount || 100);
+    const currencies = container.dataset.currencies
+        .split(",")
+        .map(c => c.trim())
+        .filter(c => c);
+
     try {
-        const url = `https://api.unirateapi.com/api/rates?api_key=${UNIRATE_API_KEY}&base=USD`;
+        const url = `https://api.unirateapi.com/api/rates?api_key=${UNIRATE_API_KEY}&base=${base}`;
         const res = await fetch(url);
         const data = await res.json();
 
-        return data.rates;
+        if (!data.rates) {
+            container.innerHTML = "FX data unavailable";
+            return;
+        }
+
+        let html = `
+            <div class="card">
+                <div style="font-size:24px;font-weight:bold; margin-bottom:24px;">
+                    💱 FX Rates (${base} Base, ${amount})
+                </div>
+                <table style="width:30%; border-collapse:collapse;">
+                    <thead>
+                        <tr>
+                            <th style="font-size:24px; text-align:center;">Currency</th>
+                            <th style="font-size:24px;text-align:center;">Rate</th>
+                            <th style="font-size:24px;text-align:center;">Value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+
+        currencies.forEach(cur => {
+            const rate = data.rates[cur];
+
+            if (!rate) return;
+
+            const converted = rate * amount;
+
+            html += `
+                <tr>
+                    <td style="font-size:24px; text-align:left;">${base} → ${cur}</td>
+                    <td style="font-size:24px; text-align:left;">${rate.toFixed(4)}</td>
+                    <td style="font-size:24px; text-align:left;">${converted.toFixed(2)}</td>
+                </tr>
+            `;
+        });
+
+        html += `
+                    </tbody>
+                </table>
+            </div>
+        `;
+
+        container.innerHTML = html;
 
     } catch (err) {
-        console.error("Unirate FX error:", err);
-        return null;
+        console.error("Unirate error:", err);
+        container.innerHTML = "FX load error";
     }
 }
 
@@ -255,26 +317,8 @@ async function loadDashboard() {
         }
     }
 
-    // 🔹 REAL-TIME FX (UNIRATE)
-    const fxRates = await fetchFX_Unirate();
-
-    if (fxRates) {
-        for (let pair of fxPairs) {
-
-            const value = fxRates[pair.symbol];
-
-            if (!value) continue;
-
-            // simulate short history for chart
-            const fakeHistory = [
-                value * (1 - 0.002),
-                value * (1 - 0.001),
-                value
-            ];
-
-            addCard("fx", pair.name, fakeHistory);
-        }
-    }
+    // 🔹 FX TABLE
+await buildFXTable();
 
     // 🔹 HEALTH SCORE
     let score = 100;
