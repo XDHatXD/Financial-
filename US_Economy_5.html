@@ -165,10 +165,11 @@ async function fetchFrankfurterHistory(base, symbol, days=30) {
         const res = await fetch(url);
         const data = await res.json();
 
-        const rates = Object.values(data.rates).map(r => r[symbol]).filter(r => r);
-        if (rates.length === 0) return null;
+        const rates = Object.values(data.rates)
+            .map(r => r[symbol])
+            .filter(r => r !== undefined && r !== null);
 
-        return rates;
+        return rates.length > 0 ? rates : null;
     } catch (err) {
         console.error("Frankfurter error:", base, symbol, err);
         return null;
@@ -176,28 +177,6 @@ async function fetchFrankfurterHistory(base, symbol, days=30) {
 }
 
 // ================= UNIRATE TABLE =================
-// ================= HELPER: FETCH FRANKFURTER =================
-async function fetchFrankfurterHistory(base, symbol, days=30) {
-    try {
-        const end = new Date().toISOString().split("T")[0];
-        const startDate = new Date(Date.now() - days*24*60*60*1000)
-            .toISOString().split("T")[0];
-
-        const url = `https://api.frankfurter.app/${startDate}..${end}?from=${base}&to=${symbol}`;
-        const res = await fetch(url);
-        const data = await res.json();
-
-        const rates = Object.values(data.rates).map(r => r[symbol]).filter(r => r);
-        if (rates.length === 0) return null;
-
-        return rates;
-    } catch (err) {
-        console.error("Frankfurter error:", base, symbol, err);
-        return null;
-    }
-}
-
-// ================= BUILD FX TABLE WITH AVERAGES =================
 async function buildFXTable() {
     const container = document.getElementById("unirate-calculator");
     if (!container) return;
@@ -222,8 +201,8 @@ async function buildFXTable() {
 
         let html = `
             <div class="card">
-                <div style="margin-left: 600px; font-size:24px;font-weight:bold; margin-bottom:24px;">
-                    💱 USD to Other Currencies (${base} Base, ${amount})
+                <div style="margin-left: 700px; font-size:24px;font-weight:bold; margin-bottom:24px;">
+                    💱 ${base} to Other Currencies (${amount} ${base})
                 </div>
                 <table style="margin-left: 400px; width:60%; border-collapse:collapse;">
                     <thead>
@@ -238,27 +217,40 @@ async function buildFXTable() {
                     <tbody>
         `;
 
-        // 🔹 Loop currencies
         for (const cur of currencies) {
             const rate = data.rates[cur];
             if (!rate) continue;
 
             const converted = rate * amount;
 
-            // 🔹 Fetch historical rates for averages
+            // 🔹 Fetch historical rates
             const weekRates = await fetchFrankfurterHistory(base, cur, 7);
             const monthRates = await fetchFrankfurterHistory(base, cur, 30);
 
             const weeklyAvg = weekRates ? (weekRates.reduce((a,b)=>a+b,0)/weekRates.length) : null;
             const monthlyAvg = monthRates ? (monthRates.reduce((a,b)=>a+b,0)/monthRates.length) : null;
 
+            // 🔹 Comparison arrows
+            const getArrow = (real, avg) => {
+                if (avg === null) return "→";
+                if (real > avg) return `<span style="color:#22c55e">▲</span>`;
+                if (real < avg) return `<span style="color:#ef4444">▼</span>`;
+                return `<span style="color:white">→</span>`;
+            };
+
             html += `
                 <tr>
                     <td style="font-size:24px; text-align:left;">${base} → ${cur}</td>
-                    <td style="font-size:24px; text-align:left;">${rate.toFixed(4)}</td>
+                    <td style="font-size:24px; text-align:left;">
+                        ${rate.toFixed(4)}
+                    </td>
                     <td style="font-size:24px; text-align:left;">${converted.toFixed(2)}</td>
-                    <td style="font-size:24px; text-align:left;">${weeklyAvg ? weeklyAvg.toFixed(4) : "N/A"}</td>
-                    <td style="font-size:24px; text-align:left;">${monthlyAvg ? monthlyAvg.toFixed(4) : "N/A"}</td>
+                    <td style="font-size:24px; text-align:left;">
+                        ${weeklyAvg ? weeklyAvg.toFixed(4) : "N/A"} ${getArrow(rate, weeklyAvg)}
+                    </td>
+                    <td style="font-size:24px; text-align:left;">
+                        ${monthlyAvg ? monthlyAvg.toFixed(4) : "N/A"} ${getArrow(rate, monthlyAvg)}
+                    </td>
                 </tr>
             `;
         }
@@ -276,7 +268,6 @@ async function buildFXTable() {
         container.innerHTML = "FX load error";
     }
 }
-
 // ================= CHART =================
 function createChart(canvasId, data) {
     new Chart(document.getElementById(canvasId), {
