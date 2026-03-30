@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Metals & Ratio Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #f0f2f5; color: #1e293b; margin: 0; padding: 20px; }
+        .container { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        h2 { margin-top: 0; font-size: 1.1rem; color: #0f172a; border-bottom: 1px solid #edf2f7; padding-bottom: 10px; margin-bottom: 15px; }
+        .summary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+        .stat-card { padding: 15px; border-radius: 10px; border: 1px solid #e2e8f0; text-align: center; background: #fff; }
+        .stat-label { font-size: 0.7rem; font-weight: 800; color: #64748b; margin-bottom: 8px; text-transform: uppercase; }
+        .stat-value { font-size: 1.2rem; font-weight: 700; color: #1e293b; }
+        .delta { font-size: 0.8rem; margin-top: 6px; font-weight: 600; padding: 2px 8px; border-radius: 4px; display: inline-block; }
+        .pos { color: #059669; background: #ecfdf5; } 
+        .neg { color: #dc2626; background: #fef2f2; }
+        .controls { display: flex; gap: 10px; margin-bottom: 10px; align-items: center; background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        button { padding: 8px 18px; border: 1px solid #e2e8f0; background: #fff; border-radius: 6px; cursor: pointer; font-weight: 600; transition: 0.2s; }
+        button.active { background: #d4af37; color: white; border-color: #d4af37; }
+        .api-status { font-size: 0.8rem; color: #64748b; font-family: monospace; }
+        .chart-container { position: relative; height: 300px; width: 100%; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="controls">
+        <strong>Range:</strong>
+        <button onclick="updateRange(90, this)">90D</button>
+        <button class="active" onclick="updateRange(365, this)">1Y</button>
+        <button onclick="updateRange(1825, this)">5Y</button>
+        <span id="status" class="api-status">Syncing...</span>
+    </div>
+
+    <div class="card">
+        <h2>Market Summary (Current Spot)</h2>
+        <div id="summaryGrid" class="summary-grid"></div>
+    </div>
+
+    <div class="card">
+        <h2>Performance Trend (Relative Start = 1.0)</h2>
+        <div class="chart-container"><canvas id="perfChart"></canvas></div>
+    </div>
+
+    <div class="card">
+        <h2>Gold-to-Silver Ratio (Ounces of Silver to buy 1 oz Gold)</h2>
+        <div class="chart-container"><canvas id="ratioChart"></canvas></div>
+    </div>
+</div>
+
+<script>
+    const API_KEY = '55DRTKOLOPM6GJJJHBXO752JJHBXO';
+    const metals = ['gold', 'silver', 'platinum', 'palladium', 'copper'];
+    const colors = { gold: '#D4AF37', silver: '#94a3b8', platinum: '#6366f1', palladium: '#ec4899', copper: '#B87333' };
+    
+    let perfChart = null, ratioChart = null;
+    let currentDays = 365;
+
+    async function fetchMetalRates() {
+        const statusEl = document.getElementById('status');
+        const to = new Date().toISOString().split('T')[0];
+        const fromDate = new Date();
+        fromDate.setDate(fromDate.getDate() - currentDays);
+        const from = fromDate.toISOString().split('T')[0];
+
+        const url = `https://api.metals.dev/v1/timeseries?api_key=${API_KEY}&start_date=${from}&end_date=${to}`;
+        statusEl.textContent = `Loading ${currentDays} days...`;
+
+        try {
+            const response = await fetch(url);
+            const result = await response.json();
+            if (result.status === "success" || result.rates) {
+                statusEl.textContent = "Live Data Active";
+                renderDashboard(result.rates);
+            } else { throw new Error(); }
+        } catch (error) {
+            statusEl.textContent = "Using Simulated Data (Check API Limits)";
+            renderDashboard(generateMockData(currentDays));
+        }
+    }
+
+    function renderDashboard(rates) {
+        const dates = Object.keys(rates).sort();
+        const firstDate = dates[0];
+        const lastDate = dates[dates.length - 1];
+
+        // 1. Summary Cards
+        const grid = document.getElementById('summaryGrid');
+        grid.innerHTML = '';
+        
+        // Add Individual Metals
+        metals.forEach(m => {
+            const start = rates[firstDate][m];
+            const end = rates[lastDate][m];
+            const pct = ((end - start) / start * 100).toFixed(2);
+            grid.innerHTML += `
+                <div class="stat-card">
+                    <div class="stat-label">${m}</div>
+                    <div class="stat-value">$${end.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                    <div class="delta ${pct >= 0 ? 'pos' : 'neg'}">${pct >= 0 ? '▲' : '▼'} ${Math.abs(pct)}%</div>
+                </div>
+            `;
+        });
+
+        // Add Gold/Silver Ratio Card
+        const startRatio = rates[firstDate].gold / rates[firstDate].silver;
+        const endRatio = rates[lastDate].gold / rates[lastDate].silver;
+        const ratioPct = ((endRatio - startRatio) / startRatio * 100).toFixed(2);
+        grid.innerHTML += `
+            <div class="stat-card" style="border-top: 3px solid #000;">
+                <div class="stat-label">Au/Ag Ratio</div>
+                <div class="stat-value">${endRatio.toFixed(2)}</div>
+                <div class="delta ${ratioPct >= 0 ? 'pos' : 'neg'}">Range: ${ratioPct}%</div>
+            </div>
+        `;
+
+        // 2. Performance Chart (Normalized)
+        const perfDatasets = metals.map(m => ({
+            label: m.toUpperCase(),
+            data: dates.map(d => rates[d][m] / rates[firstDate][m]),
+            borderColor: colors[m],
+            borderWidth: 2, pointRadius: 0, tension: 0.1
+        }));
+
+        if (perfChart) perfChart.destroy();
+        perfChart = new Chart(document.getElementById('perfChart').getContext('2d'), {
+            type: 'line', data: { labels: dates, datasets: perfDatasets },
+            options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false } }
+        });
+
+        // 3. Ratio Chart (Absolute Value)
+        const ratioData = dates.map(d => rates[d].gold / rates[d].silver);
+        if (ratioChart) ratioChart.destroy();
+        ratioChart = new Chart(document.getElementById('ratioChart').getContext('2d'), {
+            type: 'line',
+            data: { 
+                labels: dates, 
+                datasets: [{
+                    label: 'Gold/Silver Ratio',
+                    data: ratioData,
+                    borderColor: '#1e293b',
+                    backgroundColor: 'rgba(30, 41, 59, 0.1)',
+                    fill: true, borderWidth: 2, pointRadius: 0, tension: 0.1
+                }]
+            },
+            options: { 
+                responsive: true, 
+                maintainAspectRatio: false,
+                scales: { y: { title: { display: true, text: 'Ounces' } } }
+            }
+        });
+    }
+
+    function updateRange(days, btn) {
+        currentDays = days;
+        document.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        fetchMetalRates();
+    }
+
+    function generateMockData(days) {
+        const mock = {};
+        const now = new Date();
+        const prices = { gold: 2400, silver: 28, platinum: 950, palladium: 1000, copper: 4.5 };
+        for(let i = days; i >= 0; i--) {
+            const d = new Date(); d.setDate(now.getDate() - i);
+            const dateStr = d.toISOString().split('T')[0];
+            mock[dateStr] = {};
+            Object.keys(prices).forEach(m => {
+                prices[m] *= (1 + (Math.random() - 0.49) * 0.015);
+                mock[dateStr][m] = prices[m];
+            });
+        }
+        return mock;
+    }
+
+    fetchMetalRates();
+</script>
+</body>
+</html>
