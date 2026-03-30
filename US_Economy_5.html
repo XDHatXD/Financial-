@@ -154,11 +154,51 @@ async function fetchSeries(seriesId) {
         return null;
     }
 }
+// ================= HELPER: FETCH FRANKFURTER =================
+async function fetchFrankfurterHistory(base, symbol, days=30) {
+    try {
+        const end = new Date().toISOString().split("T")[0];
+        const startDate = new Date(Date.now() - days*24*60*60*1000)
+            .toISOString().split("T")[0];
 
-// ================= UNIRATE FX =================
+        const url = `https://api.frankfurter.app/${startDate}..${end}?from=${base}&to=${symbol}`;
+        const res = await fetch(url);
+        const data = await res.json();
+
+        const rates = Object.values(data.rates).map(r => r[symbol]).filter(r => r);
+        if (rates.length === 0) return null;
+
+        return rates;
+    } catch (err) {
+        console.error("Frankfurter error:", base, symbol, err);
+        return null;
+    }
+}
+
 // ================= UNIRATE TABLE =================
-async function buildFXTable() {
+// ================= HELPER: FETCH FRANKFURTER =================
+async function fetchFrankfurterHistory(base, symbol, days=30) {
+    try {
+        const end = new Date().toISOString().split("T")[0];
+        const startDate = new Date(Date.now() - days*24*60*60*1000)
+            .toISOString().split("T")[0];
 
+        const url = `https://api.frankfurter.app/${startDate}..${end}?from=${base}&to=${symbol}`;
+        const res = await fetch(url);
+        const data = await res.json();
+
+        const rates = Object.values(data.rates).map(r => r[symbol]).filter(r => r);
+        if (rates.length === 0) return null;
+
+        return rates;
+    } catch (err) {
+        console.error("Frankfurter error:", base, symbol, err);
+        return null;
+    }
+}
+
+// ================= BUILD FX TABLE WITH AVERAGES =================
+async function buildFXTable() {
     const container = document.getElementById("unirate-calculator");
     if (!container) return;
 
@@ -170,6 +210,7 @@ async function buildFXTable() {
         .filter(c => c);
 
     try {
+        // 🔹 Real-time rates from Unirate
         const url = `https://api.unirateapi.com/api/rates?api_key=${UNIRATE_API_KEY}&base=${base}`;
         const res = await fetch(url);
         const data = await res.json();
@@ -181,35 +222,46 @@ async function buildFXTable() {
 
         let html = `
             <div class="card">
-                <div style="margin-left: 680px; font-size:24px;font-weight:bold; margin-bottom:24px;">
+                <div style="margin-left: 600px; font-size:24px;font-weight:bold; margin-bottom:24px;">
                     💱 USD to Other Currencies (${base} Base, ${amount})
                 </div>
-                <table style="margin-left: 500px; width:50%; border-collapse:collapse;">
+                <table style="margin-left: 400px; width:60%; border-collapse:collapse;">
                     <thead>
                         <tr>
-                            <th style="margin-left: 20px; font-size:24px; text-align:center;">Currency Type</th>
-                            <th style="margin-left: 20px; font-size:24px;text-align:center;">Exchange Rate</th>
-                            <th style="margin-left: 20px; font-size:24px;text-align:center;">Value of $100 USD</th>
+                            <th style="font-size:24px;text-align:center;">Currency</th>
+                            <th style="font-size:24px;text-align:center;">Exchange Rate</th>
+                            <th style="font-size:24px;text-align:center;">Value of $${amount}</th>
+                            <th style="font-size:24px;text-align:center;">Weekly Avg</th>
+                            <th style="font-size:24px;text-align:center;">Monthly Avg</th>
                         </tr>
                     </thead>
                     <tbody>
         `;
 
-        currencies.forEach(cur => {
+        // 🔹 Loop currencies
+        for (const cur of currencies) {
             const rate = data.rates[cur];
-
-            if (!rate) return;
+            if (!rate) continue;
 
             const converted = rate * amount;
+
+            // 🔹 Fetch historical rates for averages
+            const weekRates = await fetchFrankfurterHistory(base, cur, 7);
+            const monthRates = await fetchFrankfurterHistory(base, cur, 30);
+
+            const weeklyAvg = weekRates ? (weekRates.reduce((a,b)=>a+b,0)/weekRates.length) : null;
+            const monthlyAvg = monthRates ? (monthRates.reduce((a,b)=>a+b,0)/monthRates.length) : null;
 
             html += `
                 <tr>
                     <td style="font-size:24px; text-align:left;">${base} → ${cur}</td>
                     <td style="font-size:24px; text-align:left;">${rate.toFixed(4)}</td>
                     <td style="font-size:24px; text-align:left;">${converted.toFixed(2)}</td>
+                    <td style="font-size:24px; text-align:left;">${weeklyAvg ? weeklyAvg.toFixed(4) : "N/A"}</td>
+                    <td style="font-size:24px; text-align:left;">${monthlyAvg ? monthlyAvg.toFixed(4) : "N/A"}</td>
                 </tr>
             `;
-        });
+        }
 
         html += `
                     </tbody>
@@ -220,7 +272,7 @@ async function buildFXTable() {
         container.innerHTML = html;
 
     } catch (err) {
-        console.error("Unirate error:", err);
+        console.error("FX table error:", err);
         container.innerHTML = "FX load error";
     }
 }
