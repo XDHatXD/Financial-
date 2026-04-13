@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FX Dashboard (Frankfurter v2)</title>
+
+<style>
+    body {
+        font-family: Arial;
+        background: #0f172a;
+        color: white;
+        font-size: 30px;
+        margin: 0;
+        padding: 20px;
+    }
+
+    .card {
+        background: #1e293b;
+        border-radius: 16px;
+        padding: 20px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+        max-width: 1200px;
+        margin: auto;
+    }
+
+    h2 {
+        margin-top: 0;
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    th, td {
+        padding: 12px;
+        text-align: center;
+    }
+
+    th {
+        background: #334155;
+    }
+
+    tr:nth-child(even) {
+        background: #1e293b;
+    }
+
+    tr:nth-child(odd) {
+        background: #0f172a;
+    }
+
+    .up { color: #22c55e; font-weight: bold; }
+    .down { color: #ef4444; font-weight: bold; }
+    .neutral { color: #94a3b8; }
+
+    .loading {
+        text-align: center;
+        padding: 20px;
+    }
+</style>
+</head>
+
+<body>
+
+<div class="card">
+    <h2>💱 FX Dashboard (Frankfurter v2)</h2>
+    <div id="loading" class="loading">Loading data...</div>
+
+    <table id="fxTable" style="display:none;">
+        <thead>
+            <tr>
+                <th>Pair</th>
+                <th>Current</th>
+                <th>Weekly Avg</th>
+                <th>Monthly Avg</th>
+                <th>Weekly Δ%</th>
+                <th>Monthly Δ%</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+</div>
+
+<script>
+const pairs = ["CHF","SGD","EUR","JPY","GBP","CNY","CAD","AUD"];
+
+function format(num) {
+    return num.toFixed(4);
+}
+
+function percentDiff(current, avg) {
+    return ((current - avg) / avg) * 100;
+}
+
+function signalClass(diff) {
+    if (diff > 0.2) return "up";
+    if (diff < -0.2) return "down";
+    return "neutral";
+}
+
+function signalArrow(diff) {
+    if (diff > 0.2) return "↑";
+    if (diff < -0.2) return "↓";
+    return "→";
+}
+
+async function fetchData() {
+    const base = "USD";
+
+    const today = new Date();
+    const pastMonth = new Date();
+    pastMonth.setMonth(today.getMonth() - 1);
+
+    const past3Month = new Date();
+    past3Month.setMonth(today.getMonth() - 3);
+
+    const formatDate = d => d.toISOString().split("T")[0];
+
+    // API URLs
+    const currentURL = `https://api.frankfurter.dev/v2/rates?base=${base}&quotes=${pairs.join(",")}`;
+    const weeklyURL = `https://api.frankfurter.dev/v2/rates?base=${base}&quotes=${pairs.join(",")}&from=${formatDate(pastMonth)}&to=${formatDate(today)}&group=week`;
+    const monthlyURL = `https://api.frankfurter.dev/v2/rates?base=${base}&quotes=${pairs.join(",")}&from=${formatDate(past3Month)}&to=${formatDate(today)}&group=month`;
+
+    const [currentRes, weeklyRes, monthlyRes] = await Promise.all([
+        fetch(currentURL).then(r => r.json()),
+        fetch(weeklyURL).then(r => r.json()),
+        fetch(monthlyURL).then(r => r.json())
+    ]);
+
+    const tableBody = document.querySelector("#fxTable tbody");
+
+    pairs.forEach(pair => {
+
+        const current = currentRes.find(r => r.quote === pair)?.rate;
+
+        const weeklyRates = weeklyRes.filter(r => r.quote === pair);
+        const monthlyRates = monthlyRes.filter(r => r.quote === pair);
+
+        const weeklyAvg = weeklyRates[weeklyRates.length - 1]?.rate;
+        const monthlyAvg = monthlyRates[monthlyRates.length - 1]?.rate;
+
+        const wDiff = percentDiff(current, weeklyAvg);
+        const mDiff = percentDiff(current, monthlyAvg);
+
+        const row = `
+        <tr>
+            <td>USD/${pair}</td>
+            <td>${format(current)}</td>
+            <td>${format(weeklyAvg)}</td>
+            <td>${format(monthlyAvg)}</td>
+
+            <td class="${signalClass(wDiff)}">
+                ${signalArrow(wDiff)} ${wDiff.toFixed(2)}%
+            </td>
+
+            <td class="${signalClass(mDiff)}">
+                ${signalArrow(mDiff)} ${mDiff.toFixed(2)}%
+            </td>
+        </tr>
+        `;
+
+        tableBody.innerHTML += row;
+    });
+
+    document.getElementById("loading").style.display = "none";
+    document.getElementById("fxTable").style.display = "table";
+}
+
+fetchData();
+</script>
+
+</body>
+</html>
